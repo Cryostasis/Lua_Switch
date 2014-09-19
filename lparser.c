@@ -1423,7 +1423,8 @@ static void ifstat (LexState *ls, int line) {
 
 static void switch_read_var (LexState *ls, expdesc *v) {
   enterlevel(ls);
-  simpleexp(ls, v);
+  subexpr(ls, v, 0);
+  //simpleexp(ls, v);
   leavelevel(ls);
 }
 
