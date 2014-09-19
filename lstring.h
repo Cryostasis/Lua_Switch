@@ -22,7 +22,7 @@
 #define luaS_fix(s)	l_setbit((s)->tsv.marked, FIXEDBIT)
 
 
-/*
+/*luaS_new
 ** test whether a string is a reserved word
 */
 #define isreserved(s)	((s)->tsv.tt == LUA_TSHRSTR && (s)->tsv.extra > 0)

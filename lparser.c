@@ -594,6 +594,7 @@ static int block_follow (LexState *ls, int withuntil) {
   switch (ls->t.token) {
     case TK_ELSE: case TK_ELSEIF:
     case TK_END: case TK_EOS:
+    case TK_CASE: case TK_DEFAULT:
       return 1;
     case TK_UNTIL: return withuntil;
     default: return 0;
@@ -1088,7 +1089,6 @@ static void block (LexState *ls) {
   leaveblock(fs);
 }
 
-
 /*
 ** structure to chain all variables in the left-hand side of an
 ** assignment
@@ -1419,6 +1419,65 @@ static void ifstat (LexState *ls, int line) {
   luaK_patchtohere(fs, escapelist);  /* patch escape list to 'if' end */
 }
 
+//================================================ SWITCH ========================================================
+
+static void switch_read_var (LexState *ls, expdesc *v) {
+  enterlevel(ls);
+  simpleexp(ls, v);
+  leavelevel(ls);
+}
+
+static void switch_complete_expr (LexState *ls, expdesc *v) {
+    expdesc v2;
+    enterlevel(ls);
+    subexpr(ls, &v2, 0);
+    //simpleexp(ls, &v2);
+    luaK_posfix(ls->fs, OPR_EQ, v, &v2, ls->linenumber);
+    leavelevel(ls);
+}
+
+static void test_case_block (LexState *ls, int *escapelist, expdesc *v) {
+  /* test_case_block -> [CASE] var DO block */
+  BlockCnt bl;
+  FuncState *fs = ls->fs;
+  int jf;  /* instruction to skip 'case' code (if condition is false) */
+  luaX_next(ls);  /* skip CASE */
+  switch_complete_expr(ls, v);  /* read variable */
+  checknext(ls, TK_DO);
+
+  luaK_goiftrue(ls->fs, v);  /* skip over block if condition is false */
+  enterblock(fs, &bl, 0);
+  jf = v->f;
+  statlist(ls);  /* `CASE' part */
+  leaveblock(fs);
+
+  if (ls->t.token == TK_CASE ||
+    ls->t.token == TK_DEFAULT)
+    luaK_concat(fs, escapelist, luaK_jump(fs));
+  //check_match(ls, TK_END, TK_CASE, ls->linenumber);
+  luaK_patchtohere(fs, jf);
+}
+
+static void switchstat (LexState *ls, int line) {
+  /* switchstat -> SWITCH var {CASE var DO block} [DEFAULT block] END */
+  expdesc v, buf;
+  luaX_next(ls);
+
+  switch_read_var(ls, &v);
+
+  FuncState *fs = ls->fs;
+  int escapelist = NO_JUMP;
+  while (ls->t.token == TK_CASE) {
+    buf = v;
+    test_case_block(ls, &escapelist, &buf);  /* CASE var DO block */
+  }
+  if (testnext(ls, TK_DEFAULT))
+    block(ls);      /* `default' part */
+  check_match(ls, TK_END, TK_SWITCH, line);
+  luaK_patchtohere(fs, escapelist);
+}
+
+//==============================================================================================================
 
 static void localfunc (LexState *ls) {
   expdesc b;
@@ -1538,6 +1597,10 @@ static void statement (LexState *ls) {
       ifstat(ls, line);
       break;
     }
+    case TK_SWITCH: {  /* stat -> whilestat */
+      switchstat(ls, line);
+      break;
+    }
     case TK_WHILE: {  /* stat -> whilestat */
       whilestat(ls, line);
       break;
@@ -1635,4 +1698,3 @@ Closure *luaY_parser (lua_State *L, ZIO *z, Mbuffer *buff,
   lua_assert(dyd->actvar.n == 0 && dyd->gt.n == 0 && dyd->label.n == 0);
   return cl;  /* it's on the stack too */
 }
-
